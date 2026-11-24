@@ -234,7 +234,7 @@ modules:
     builddir: true
     sources:
       - type: git
-        url: https://github.com/chiaki-ng/chiaki-ng.git
+        url: https://github.com/MeowCatboyMeow/chiaki-ng-padfix-build.git
         branch: main
     post-install:
       - install -Dm755 ../scripts/psn-account-id.py /app/bin/psn-account-id
