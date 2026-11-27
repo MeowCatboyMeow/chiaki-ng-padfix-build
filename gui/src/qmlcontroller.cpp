@@ -86,6 +86,7 @@ bool QmlController::isDualSense() const
 
 bool QmlController::isHandheld() const
 {
+    controller->RefreshIdentity();
     return controller->IsHandheld();
 }
 

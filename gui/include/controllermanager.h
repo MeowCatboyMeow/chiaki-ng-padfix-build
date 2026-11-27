@@ -5,6 +5,7 @@
 
 #include <chiaki/controller.h>
 
+#include <atomic>
 #include <QObject>
 #include <QSet>
 #include <QMap>
@@ -96,13 +97,16 @@ class Controller : public QObject
 		bool updating_mapping_button;
 		bool enable_analog_stick_mapping;
 		bool is_dualsense;
-		bool is_handheld;
+		std::atomic<bool> is_handheld;
 		bool is_steam_virtual;
-		bool is_steam_virtual_unmasked;
+		std::atomic<bool> is_steam_virtual_unmasked;
 		bool is_dualsense_edge;
 		bool has_led;
 		bool micbutton_push;
 		uint16_t firmware_version;
+		uint16_t guid_version;
+
+		QPair<uint16_t, uint16_t> CurrentVidPid();
 
 #ifdef CHIAKI_GUI_ENABLE_SDL_GAMECONTROLLER
 		QMap<QPair<Sint64, Sint64>, uint8_t> touch_ids;
@@ -139,6 +143,7 @@ class Controller : public QObject
 		void ChangeLEDColor(const uint8_t *led_color);
 		void ChangePlayerIndex(const uint8_t player_index);
 		bool IsDualSense();
+		void RefreshIdentity();
 		bool IsHandheld();
 		bool IsSteamVirtual();
 		bool IsSteamVirtualUnmasked();

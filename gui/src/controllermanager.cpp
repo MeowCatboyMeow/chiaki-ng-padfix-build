@@ -366,7 +366,7 @@ void ControllerManager::ControllerClosed(Controller *controller)
 Controller::Controller(int device_id, ControllerManager *manager)
 : QObject(manager), ref(0), last_motion_timestamp(0), micbutton_push(false), is_dualsense(false),
   is_dualsense_edge(false), has_led(false), firmware_version(0), updating_mapping_button(false), is_handheld(false),
-  is_steam_virtual(false), is_steam_virtual_unmasked(false), enable_analog_stick_mapping(false)
+  is_steam_virtual(false), is_steam_virtual_unmasked(false), enable_analog_stick_mapping(false), guid_version(0)
 {
 	this->id = device_id;
 	this->manager = manager;
@@ -391,21 +391,18 @@ Controller::Controller(int device_id, ControllerManager *manager)
 			has_led = SDL_GameControllerHasLED(controller);
 			auto controller_id = QPair<uint16_t, uint16_t>(SDL_GameControllerGetVendor(controller), SDL_GameControllerGetProduct(controller));
 			is_dualsense = chiaki_dualsense_controller_ids.contains(controller_id);
-			is_handheld = chiaki_handheld_controller_ids.contains(controller_id);
 			is_dualsense_edge = chiaki_dualsense_edge_controller_ids.contains(controller_id);
 			firmware_version = SDL_GameControllerGetFirmwareVersion(controller);
 			SDL_Joystick *js = SDL_GameControllerGetJoystick(controller);
 			SDL_JoystickGUID guid = SDL_JoystickGetGUID(js);
 			auto guid_controller_id = QPair<uint16_t, uint16_t>(0, 0);
-			uint16_t guid_version = 0;
 			SDL_GetJoystickGUIDInfo(guid, &guid_controller_id.first, &guid_controller_id.second, &guid_version, NULL);
 #ifdef Q_OS_MACOS
 			is_steam_virtual = (guid_version == 0 && chiaki_steam_virtual_controller_ids.contains(guid_controller_id));
-			is_steam_virtual_unmasked = (guid_version == 0 && chiaki_steam_virtual_controller_ids.contains(controller_id));
 #else
 			is_steam_virtual = chiaki_steam_virtual_controller_ids.contains(guid_controller_id);
-			is_steam_virtual_unmasked = chiaki_steam_virtual_controller_ids.contains(controller_id);
 #endif
+			RefreshIdentity();
 			break;
 		}
 	}
@@ -939,12 +936,47 @@ bool Controller::IsDualSenseEdge()
 	return false;
 }
 
+QPair<uint16_t, uint16_t> Controller::CurrentVidPid()
+{
+#ifdef CHIAKI_GUI_ENABLE_SDL_GAMECONTROLLER
+	if(controller)
+		return QPair<uint16_t, uint16_t>(SDL_GameControllerGetVendor(controller), SDL_GameControllerGetProduct(controller));
+#endif
+	return QPair<uint16_t, uint16_t>(0, 0);
+}
+
+// A Steam virtual gamepad only reports the vendor/product of the controller behind it once Steam
+// has written its virtual gamepad info file, and Steam writes that file a couple of seconds after
+// it creates the pads (at game start, and again whenever a controller reconnects). A pad opened in
+// that window reports the generic Steam virtual gamepad ID, or whatever the previous file said for
+// its slot. Refresh the cached identity on the GUI thread so SDL's global joystick lock is never
+// taken from the Takion/audio receive thread (where blocking on a slow uinput rumble upload can
+// stall acks and drop the stream).
+void Controller::RefreshIdentity()
+{
+#ifdef CHIAKI_GUI_ENABLE_SDL_GAMECONTROLLER
+	if(!controller)
+	{
+		is_handheld.store(false, std::memory_order_relaxed);
+		is_steam_virtual_unmasked.store(false, std::memory_order_relaxed);
+		return;
+	}
+	auto vid_pid = CurrentVidPid();
+	is_handheld.store(chiaki_handheld_controller_ids.contains(vid_pid), std::memory_order_relaxed);
+#ifdef Q_OS_MACOS
+	is_steam_virtual_unmasked.store(guid_version == 0 && chiaki_steam_virtual_controller_ids.contains(vid_pid), std::memory_order_relaxed);
+#else
+	is_steam_virtual_unmasked.store(chiaki_steam_virtual_controller_ids.contains(vid_pid), std::memory_order_relaxed);
+#endif
+#endif
+}
+
 bool Controller::IsHandheld()
 {
 #ifdef CHIAKI_GUI_ENABLE_SDL_GAMECONTROLLER
 	if(!controller)
 		return false;
-	return is_handheld;
+	return is_handheld.load(std::memory_order_relaxed);
 #endif
 	return false;
 }
@@ -964,7 +996,7 @@ bool Controller::IsSteamVirtualUnmasked()
 #ifdef CHIAKI_GUI_ENABLE_SDL_GAMECONTROLLER
 	if(!controller)
 		return false;
-	return is_steam_virtual_unmasked;
+	return is_steam_virtual_unmasked.load(std::memory_order_relaxed);
 #endif
 	return false;
 }
